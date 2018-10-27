@@ -1,0 +1,8 @@
+[package]
+name = "depot"
+version = "0.1.0"
+authors = ["Jason Longshore <hello@jasonlongshore.com>"]
+
+[dependencies]
+base64 = "0.9.3"
+byteorder = "1"
