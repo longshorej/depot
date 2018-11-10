@@ -22,18 +22,20 @@ extern crate depot;
 use depot::*;
 use std::path::PathBuf;
 
-let path = PathBuf::from("/tmp/my-queue");
+fn main() {
+    let path = PathBuf::from("/tmp/my-queue");
 
-let mut queue = Queue::new(&path);
+    let mut queue = queue::Queue::new(&path);
 
-let message = format!("the quick brown fox jumped over the lazy dog, -\n #{}", i);
-let data = message.as_bytes();
-queue.append(&data).unwrap();
-queue.sync().unwrap();
+    let message = format!("the quick brown fox jumped over the lazy dog");
+    let data = message.as_bytes();
+    queue.append(&data).unwrap();
+    queue.sync().unwrap();
 
-let mut stream = queue.stream(None).unwrap();
-while let Some(item) = stream.next() {
-    println!("read item: {:?}", item.unwrap());
+    let mut stream = queue.stream(None).unwrap();
+    while let Some(item) = stream.next() {
+        println!("read item: {:?}", item.unwrap());
+    }
 }
 ```
 
