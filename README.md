@@ -14,6 +14,29 @@ It's important to note that Depot is focused strictly on low-level storage. Repl
 
 Depot is currently under development but should be "finished" within a few weeks. Development happens on Saturday and Sunday afternoons, CDT.
 
+## Usage
+
+```rust
+extern crate depot;
+
+use depot::*;
+use std::path::PathBuf;
+
+let path = PathBuf::from("/tmp/my-queue");
+
+let mut queue = Queue::new(&path);
+
+let message = format!("the quick brown fox jumped over the lazy dog, -\n #{}", i);
+let data = message.as_bytes();
+queue.append(&data).unwrap();
+queue.sync().unwrap();
+
+let mut stream = queue.stream(None).unwrap();
+while let Some(item) = stream.next() {
+    println!("read item: {:?}", item.unwrap());
+}
+```
+
 ## Goals & Thoughts
 
 * Store data in plain files on disk with tight control over when data is flushed.
@@ -62,6 +85,15 @@ A single Depot queue can technically store ~3.8PB of data, given a limit of 1.9B
 ### Java and Scala?
 
 Support is planned via JNI, see the [jvm](jvm) directory which is working toward a proof of concept to use Depot from Java and Scala code.
+
+## Releasing
+
+Releases are currently manually performed.
+
+1) Upgrade version in `Cargo.toml`
+2) Commit changes
+3) Create and push a tag: ```git tag v<version>; git push v<version>```
+4) Release on crates.io: ```cargo publish```
 
 ## License
 
