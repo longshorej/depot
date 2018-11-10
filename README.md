@@ -1,10 +1,18 @@
 # Depot
 
+[![Crates.io](https://img.shields.io/crates/v/depot.svg?style=flat-square)](https://crates.io/crates/depot)
+[![Crates.io](https://img.shields.io/crates/d/depot.svg?style=flat-square)](https://crates.io/crates/depot)
+[![Travis](https://img.shields.io/travis/longshorej/depot.svg?style=flat-square)](https://travis-ci.org/longshorej/depot)
+
 ## Overview
 
 Depot is a persistent queue library. You can store items on disk and later retrieve them as an ordered stream. An item is a collection of bytes (`u8`) and is assigned a monotonically increasing id. The ids are not necessarily sequential.
 
 It's important to note that Depot is focused strictly on low-level storage. Replication and remote access are outside the scope of Depot.
+
+## Status
+
+Depot is currently under development but should be "finished" within a few weeks. Development happens on Saturday and Sunday afternoons, CDT.
 
 ## Goals & Thoughts
 
