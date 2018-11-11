@@ -1,4 +1,5 @@
-use section::{Decoded, Section, SectionReader};
+use section::{SectionItem, SectionReader, SectionWriter};
+use std::ffi::OsStr;
 use std::fs;
 use std::fs::DirEntry;
 use std::io;
@@ -175,46 +176,46 @@ fn test_component() {
 }
 
 pub struct Queue {
-    component_section: Option<(Component, Section)>,
+    component_section: Option<(Component, SectionWriter)>,
+    max_file_size: u32,
+    max_item_size: u32,
     path_buf: PathBuf,
+    read_chunk_size: u32,
+    write_chunk_size: u32,
 }
 
 impl Queue {
-    pub fn new(path: &PathBuf) -> Queue {
+    /// Constructs a new `Queue` that is used to read and
+    /// write items to the filesystem.
+    pub fn new<S: AsRef<OsStr> + ?Sized>(path: &S) -> Queue {
         let path_buf = PathBuf::from(path);
 
         Queue {
             component_section: None,
+            max_file_size: 2147287039,
+            max_item_size: 65536,
             path_buf,
+            read_chunk_size: 8192,
+            write_chunk_size: 8192,
         }
     }
 
-    fn with<A, F>(&mut self, f: F) -> io::Result<A>
-    where
-        F: Fn(&Component, &mut Section) -> io::Result<A>,
-    {
-        if self.component_section.is_none() {
-            fs::create_dir_all(&self.path_buf)?;
+    pub fn config<S: AsRef<OsStr> + ?Sized>(
+        path: &S,
+        max_file_size: u32,
+        max_item_size: u32,
+        read_chunk_size: u32,
+        write_chunk_size: u32,
+    ) -> Queue {
+        let path_buf = PathBuf::from(path);
 
-            let (c0_path, c0) = depot_latest_init_dir(&self.path_buf)?;
-            let (c1_path, c1) = depot_latest_init_dir(&c0_path)?;
-            let (c2_path, c2) = depot_latest_init_dir(&c1_path)?;
-            let (c3_path, c3) = depot_latest_init_file(&c2_path)?;
-
-            self.component_section =
-                Some((Component::from(c0, c1, c2, c3)?, Section::new(&c3_path)?));
-        }
-
-        match self.component_section {
-            Some((ref component, ref mut section)) => f(component, section),
-
-            None => {
-                // this shouldn't be possible, given initialization above..
-                Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    "section not initialized; this is likely a bug",
-                ))
-            }
+        Queue {
+            component_section: None,
+            max_file_size,
+            max_item_size,
+            path_buf,
+            read_chunk_size,
+            write_chunk_size,
         }
     }
 
@@ -254,7 +255,45 @@ impl Queue {
         self.with(|ref _component, ref mut section| section.sync())
     }
 
+    pub fn stream(
+        &self,
+        id: Option<u64>,
+    ) -> io::Result<impl Iterator<Item = io::Result<QueueItem>>> {
+        let iterator = self.stream_with_truncated(id)?;
+
+        Ok(iterator.filter_map(|r| match r {
+            Ok((_, true)) => None,
+            Ok((item, false)) => Some(Ok(item)),
+            Err(e) => Some(Err(e)),
+        }))
+    }
+
+    pub fn stream_with_truncated(
+        &self,
+        id: Option<u64>,
+    ) -> io::Result<impl Iterator<Item = io::Result<(QueueItem, bool)>>> {
+        let (component, section_offset) = match id {
+            Some(id) => offset_decode(id)?,
+            None => (Component::new(), 0),
+        };
+
+        // @FIXME have the struct take a reference equal to our lifetime?
+        Ok(QueueIterator::new(
+            self.path_buf.clone(),
+            component,
+            self.max_file_size,
+            self.max_item_size,
+            self.read_chunk_size,
+            section_offset,
+        ))
+    }
+
     fn advance(&mut self) -> io::Result<()> {
+        let max_file_size = self.max_file_size;
+        let max_item_size = self.max_item_size;
+        let read_chunk_size = self.read_chunk_size;
+        let write_chunk_size = self.write_chunk_size;
+
         let path_buf = self.path_buf.clone();
         let next_component_section = self.with(|ref component, ref mut section| {
             section.sync()?;
@@ -266,7 +305,13 @@ impl Queue {
 
                     fs::create_dir_all(&parent)?;
 
-                    let section = Section::new(&path)?;
+                    let section = SectionWriter::new(
+                        &path,
+                        max_file_size,
+                        max_item_size,
+                        read_chunk_size,
+                        write_chunk_size,
+                    )?;
 
                     Ok((c, section))
                 }
@@ -280,29 +325,42 @@ impl Queue {
         Ok(())
     }
 
-    pub fn stream(
-        &self,
-        id: Option<u64>,
-    ) -> io::Result<impl Iterator<Item = io::Result<QueueItem>>> {
-        let (component, section_offset) = match id {
-            Some(id) => offset_decode(id)?,
-            None => (Component::new(), 0),
-        };
+    fn with<A, F>(&mut self, f: F) -> io::Result<A>
+    where
+        F: Fn(&Component, &mut SectionWriter) -> io::Result<A>,
+    {
+        if self.component_section.is_none() {
+            fs::create_dir_all(&self.path_buf)?;
 
-        // @FIXME have the struct take a reference equal to our lifetime?
-        Ok(QueueIterator::new(
-            self.path_buf.clone(),
-            component,
-            section_offset,
-        ))
+            let (c0_path, c0) = depot_latest_init_dir(&self.path_buf)?;
+            let (c1_path, c1) = depot_latest_init_dir(&c0_path)?;
+            let (c2_path, c2) = depot_latest_init_dir(&c1_path)?;
+            let (c3_path, c3) = depot_latest_init_file(&c2_path)?;
+
+            self.component_section = Some((
+                Component::from(c0, c1, c2, c3)?,
+                SectionWriter::new(
+                    &c3_path,
+                    self.max_file_size,
+                    self.max_item_size,
+                    self.read_chunk_size,
+                    self.write_chunk_size,
+                )?,
+            ));
+        }
+
+        match self.component_section {
+            Some((ref component, ref mut section)) => f(component, section),
+
+            None => {
+                // this shouldn't be possible, given initialization above..
+                Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    "section not initialized; this is likely a bug",
+                ))
+            }
+        }
     }
-
-    /*
-    pub fn stream(&self, id: Option<u32>) -> io::Result<impl Iterator<Item = io::Result<Item>>> {
-    }
-
-    pub fn stream_with_truncated(&self, id: Option<u32>) -> io::Result<impl Iterator<Item = io::Result<Decoded>>> {
-    }*/
 }
 
 #[derive(Debug)]
@@ -314,17 +372,30 @@ pub struct QueueItem {
 struct QueueIterator {
     component: Component,
     known_eof: bool,
+    max_file_size: u32,
+    max_item_size: u32,
     path_buf: PathBuf,
-    section: Option<Box<Iterator<Item = io::Result<Decoded>>>>,
+    read_chunk_size: u32,
+    section: Option<Box<Iterator<Item = io::Result<SectionItem>>>>,
     section_offset: u32,
 }
 
 impl QueueIterator {
-    fn new(path_buf: PathBuf, component: Component, section_offset: u32) -> QueueIterator {
+    fn new(
+        path_buf: PathBuf,
+        component: Component,
+        max_file_size: u32,
+        max_item_size: u32,
+        read_chunk_size: u32,
+        section_offset: u32,
+    ) -> QueueIterator {
         QueueIterator {
             component,
             known_eof: false,
+            max_file_size,
+            max_item_size,
             path_buf,
+            read_chunk_size,
             section: None,
             section_offset,
         }
@@ -332,9 +403,9 @@ impl QueueIterator {
 }
 
 impl Iterator for QueueIterator {
-    type Item = io::Result<QueueItem>;
+    type Item = io::Result<(QueueItem, bool)>;
 
-    fn next(&mut self) -> Option<io::Result<QueueItem>> {
+    fn next(&mut self) -> Option<io::Result<(QueueItem, bool)>> {
         // The last file we read indicated EOF, so we need
         // to advance sections or bail out if unable to.
         if self.known_eof {
@@ -360,7 +431,12 @@ impl Iterator for QueueIterator {
             let (_, section_path) = self.component.paths(&self.path_buf);
 
             if section_path.exists() {
-                let reader = SectionReader::new(&section_path);
+                let reader = SectionReader::new(
+                    &section_path,
+                    self.max_file_size,
+                    self.max_item_size,
+                    self.read_chunk_size,
+                );
 
                 match reader.stream_with_truncated(Some(self.section_offset)) {
                     Ok(iterator) => {
@@ -376,22 +452,22 @@ impl Iterator for QueueIterator {
 
         match self.section {
             Some(ref mut s) => match s.next() {
-                Some(Ok(Decoded::Item(i))) => {
-                    let id = offset_encode(&self.component, i.id);
+                Some(Ok(SectionItem {
+                    id,
+                    data,
+                    known_eof,
+                    truncated,
+                })) => {
+                    self.known_eof = known_eof;
+                    self.section_offset = id;
 
-                    self.known_eof = i.known_eof;
-                    self.section_offset = i.id;
-
-                    Some(Ok(QueueItem { id, data: i.data }))
-                }
-
-                Some(Ok(Decoded::TruncatedItem(i))) => {
-                    let id = offset_encode(&self.component, i.id);
-
-                    self.known_eof = i.known_eof;
-                    self.section_offset = i.id;
-
-                    Some(Ok(QueueItem { id, data: i.data }))
+                    Some(Ok((
+                        QueueItem {
+                            id: offset_encode(&self.component, id),
+                            data,
+                        },
+                        truncated,
+                    )))
                 }
 
                 Some(Err(e)) => Some(Err(e)),
@@ -526,7 +602,6 @@ mod tests {
 
     #[test]
     fn test_reader_writer_concurrent() {
-        return;
         let tmp_dir = tempdir::TempDir::new("depot-tests").unwrap();
         let size = 10_000_000;
 
@@ -534,7 +609,8 @@ mod tests {
             let tmp_path = tmp_dir.path().to_owned();
 
             thread::spawn(move || {
-                let mut queue = Queue::new(&PathBuf::from(&tmp_path));
+                let mut queue =
+                    Queue::config(&PathBuf::from(&tmp_path), 8388608, 65536, 8192, 8192);
 
                 for i in 0..size {
                     let message =
@@ -548,11 +624,10 @@ mod tests {
         };
 
         let consumer = {
-            return;
             let tmp_path = tmp_dir.path().to_owned();
 
             thread::spawn(move || {
-                let queue = Queue::new(&PathBuf::from(&tmp_path));
+                let queue = Queue::config(&PathBuf::from(&tmp_path), 8388608, 65536, 8192, 8192);
                 let mut reader = queue.stream(None).unwrap();
 
                 for _ in 0..size {
@@ -582,7 +657,7 @@ mod tests {
         {
             let tmp_path = tmp_dir.path().to_owned();
 
-            let mut queue = Queue::new(&PathBuf::from(&tmp_path));
+            let mut queue = Queue::config(&PathBuf::from(&tmp_path), 8388608, 65536, 8192, 8192);
 
             for i in 0..size {
                 let message = format!("the quick brown fox jumped over the lazy dog, -\n #{}", i);
@@ -596,7 +671,7 @@ mod tests {
         {
             let tmp_path = tmp_dir.path().to_owned();
 
-            let queue = Queue::new(&PathBuf::from(&tmp_path));
+            let queue = Queue::config(&PathBuf::from(&tmp_path), 8388608, 65536, 8192, 8192);
             let mut reader = queue.stream(None).unwrap();
 
             for _ in 0..size {
