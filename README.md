@@ -19,19 +19,19 @@ Depot is currently under development but should be "finished" within a few weeks
 ```rust
 extern crate depot;
 
-use depot::*;
-use std::path::PathBuf;
+use depot::Queue;
 
 fn main() {
-    let path = PathBuf::from("/tmp/my-queue");
+    // Create a queue that writes data into /tmp/my-queue (a directory)
+    let mut queue = Queue::new("/tmp/my-queue");
 
-    let mut queue = queue::Queue::new(&path);
-
+    // Append an item
     let message = format!("the quick brown fox jumped over the lazy dog");
     let data = message.as_bytes();
     queue.append(&data).unwrap();
     queue.sync().unwrap();
 
+    // Read all of the items and print them
     let mut stream = queue.stream(None).unwrap();
     while let Some(item) = stream.next() {
         println!("read item: {:?}", item.unwrap());
