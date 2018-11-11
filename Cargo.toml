@@ -6,7 +6,7 @@ description = "A (disk) persistent queue library"
 homepage = "https://github.com/longshorej/depot"
 repository = "https://github.com/longshorej/depot"
 readme = "README.md"
-keywords = ["persistence", "queue", "durable", "storage", "disk", "data"]
+keywords = ["persistence", "queue", "storage", "disk", "data"]
 license = "Apache-2.0"
 
 [dependencies]
