@@ -88,15 +88,6 @@ A single Depot queue can technically store ~3.8PB of data, given a limit of 1.9B
 
 Support is planned via JNI, see the [jvm](jvm) directory which is working toward a proof of concept to use Depot from Java and Scala code.
 
-## Releasing
-
-Releases are currently manually performed.
-
-1) Upgrade version in `Cargo.toml`
-2) Commit changes
-3) Create and push a tag: ```git tag v<version>; git push v<version>```
-4) Release on crates.io: ```cargo publish```
-
 ## License
 
 Depot is licensed under the Apache License, Version 2. See [LICENSE](LICENSE).
