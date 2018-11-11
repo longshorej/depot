@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 const MAX_COMPONENT_VALUE: u16 = 1000;
 
-const MAX_COMPONENT_ENCODED_VALUE: u32 = 2147483647;
+const MAX_COMPONENT_ENCODED_VALUE: u32 = 1_999_999_999;
 
 #[derive(Debug, PartialEq)]
 pub struct Component {
@@ -57,7 +57,9 @@ impl Component {
     }
 
     fn from(one: u16, two: u16, three: u16, four: u16) -> io::Result<Component> {
-        if one <= 1 && two < MAX_COMPONENT_VALUE && three < MAX_COMPONENT_VALUE
+        if one <= 1
+            && two < MAX_COMPONENT_VALUE
+            && three < MAX_COMPONENT_VALUE
             && four < MAX_COMPONENT_VALUE
         {
             Ok(Component {
@@ -77,7 +79,9 @@ impl Component {
     fn encode(&self) -> u32 {
         let v = MAX_COMPONENT_VALUE as u32;
 
-        self.one as u32 * v * v * v + self.two as u32 * v * v + self.three as u32 * v
+        self.one as u32 * v * v * v
+            + self.two as u32 * v * v
+            + self.three as u32 * v
             + self.four as u32
     }
 
@@ -126,7 +130,8 @@ impl Component {
     }
 
     fn paths<P: AsRef<Path>>(&self, base: P) -> (PathBuf, PathBuf) {
-        let parent = base.as_ref()
+        let parent = base
+            .as_ref()
             .join(format!("d{}", self.one))
             .join(format!("d{}", self.two))
             .join(format!("d{}", self.three));
@@ -158,6 +163,15 @@ fn test_component() {
 
         component = component.next().unwrap();
     }
+
+    assert_eq!(
+        Component::decode(1_999_999_999).unwrap(),
+        Component::from(1, 999, 999, 999).unwrap()
+    );
+
+    assert!(Component::from(2, 0, 0, 0).is_err());
+
+    assert!(Component::decode(2_000_000_000).is_err());
 }
 
 pub struct Queue {
