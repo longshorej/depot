@@ -1,12 +1,16 @@
 language: rust
 rust:
   - stable
-  - beta
-  - nightly
+os:
+  - windows
+  - linux
+  - osx
 matrix:
   allow_failures:
     - rust: nightly
 cache: cargo
 script:
   - cargo build --verbose --all
+  - cargo build --verbose --all --release
   - cargo test --verbose --all
+  - cargo test --verbose --all --release
