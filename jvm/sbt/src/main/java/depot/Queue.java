@@ -161,6 +161,7 @@ class QueueIterator implements Iterator<QueueItem>, Closeable {
           boolean truncated = Native.queueStreamItemTruncated(itemPtr);
 
           if (!truncated || allowTruncated) {
+            // @TODO consider a lower level interface to reduce allocations
             byte[] data = new byte[itemLength];
             Native.queueStreamItemCopy(itemPtr, data);
 

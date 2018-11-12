@@ -7,6 +7,8 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 
 public class Native {
+  // @TODO finalize for Native to remove temporary file when class loader is GCd
+  // @TODO extract from resources, based on runtime analysis of platform
   static {
     try {
       Path libdepotDestination = Files.createTempFile("depot", ".so");
