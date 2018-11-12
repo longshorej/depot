@@ -271,7 +271,7 @@ impl Queue {
     pub fn stream_with_truncated(
         &self,
         id: Option<u64>,
-    ) -> io::Result<impl Iterator<Item = io::Result<(QueueItem, bool)>>> {
+    ) -> io::Result<QueueIterator> {
         let (component, section_offset) = match id {
             Some(id) => offset_decode(id)?,
             None => (Component::new(), 0),
@@ -369,7 +369,7 @@ pub struct QueueItem {
     pub data: Vec<u8>,
 }
 
-struct QueueIterator {
+pub struct QueueIterator {
     component: Component,
     known_eof: bool,
     max_file_size: u32,

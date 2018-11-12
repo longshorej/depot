@@ -1,0 +1,14 @@
+[package]
+name = "depot-jvm"
+version = "0.1.0"
+authors = ["Jason Longshore <hello@jasonlongshore.com>"]
+
+[dependencies]
+depot = { path = "../../" }
+jni = "0.10.1"
+libc = "0.2"
+
+[lib]
+name = "depot"
+crate-type = ["dylib"]
+
