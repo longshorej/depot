@@ -1,6 +1,6 @@
 [package]
 name = "depot"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Jason Longshore <hello@jasonlongshore.com>"]
 description = "A (disk) persistent queue library"
 homepage = "https://github.com/longshorej/depot"
