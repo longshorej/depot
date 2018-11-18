@@ -20,8 +20,9 @@ Depot is currently under development but should be "finished" within a few weeks
 extern crate depot;
 
 use depot::Queue;
+use std::io;
 
-fn main() {
+fn main() -> io::Result<()> {
     // Create a queue that writes data into /tmp/my-queue (a directory)
     let mut queue = Queue::new("/tmp/my-queue");
 
@@ -32,10 +33,12 @@ fn main() {
     queue.sync().unwrap();
 
     // Read all of the items and print them
-    let mut stream = queue.stream(None).unwrap();
-    while let Some(item) = stream.next() {
-        println!("read item: {:?}", item.unwrap());
+    let mut stream = queue.stream(None)?;
+    while let Some(item) = stream.next()? {
+        println!("read item: {:?}", item);
     }
+
+    Ok(())
 }
 ```
 
@@ -66,7 +69,7 @@ However, if it isn't a *10* (and the file is not empty), Depot assumes that the 
 
 ### How fast is Depot?
 
-The low level primitive, *Section*, is largely limited by disk I/O speed. For a very flawed initial test, given a Lenovo Thinkpad, i7-6600U, with a consumer-grade SSD, 50 byte payloads, about 4.7M reads/sec can be performed by a single reader. This translates to ~300MB/sec. For a writer, given the same constraints, about 1.7M writes/sec, translating to ~110MB/sec. Be sure to take these measurements with a grain of salt.
+The low level primitive, *Section*, is largely limited by disk I/O speed. For a very flawed initial test, given a Lenovo Thinkpad, i7-6600U, with a consumer-grade SSD, 12 byte payloads, about 70M reads/sec (~900MB/sec) can be performed by a single reader with a warm disk cache. With a cleared cache, these numbers are around 35M reads/sec (~375MB/sec). For a writer, given the same constraints, about XXX writes/sec, translating to ~XXXMB/sec. Be sure to take these measurements with a grain of salt.
 
 The primary interface, *Queue*, has similar performance characteristics but measurements haven't been done yet.
 
