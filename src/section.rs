@@ -180,15 +180,14 @@ impl SectionStreamingIterator {
                             let byte = self.item_buf[j];
 
                             if escaped {
+                                escaped = false;
+
                                 if byte == MARKER_FAIL_REMAP {
                                     self.item_buf[j - shifted] = MARKER_FAIL;
-                                    escaped = false;
                                 } else if byte == MARKER_SEPARATOR_REMAP {
                                     self.item_buf[j - shifted] = MARKER_SEPARATOR;
-                                    escaped = false;
                                 } else if byte == MARKER_ESCAPE {
                                     self.item_buf[j - shifted] = MARKER_ESCAPE;
-                                    escaped = false;
                                 } else {
                                     self.always_fail = true;
 
@@ -230,11 +229,14 @@ impl SectionStreamingIterator {
                 last_byte = byte;
             }
 
-            let next_item_len = self.item_len - self.item_start;
-
-            for j in self.item_start..self.item_len {
-                self.item_buf[next_item_len] = self.item_buf[j];
-            }
+            let next_item_len = {
+                let mut k = 0;
+                for j in self.item_start..self.item_len {
+                    self.item_buf[k] = self.item_buf[j];
+                    k += 1;
+                }
+                k
+            };
 
             self.item_start = 0;
             self.item_len = next_item_len;
