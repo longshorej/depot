@@ -2,7 +2,7 @@ use std::cmp;
 use std::fs::{File, OpenOptions};
 use std::io;
 use std::io::prelude::*;
-use std::io::{BufReader, BufWriter, SeekFrom};
+use std::io::{BufWriter, SeekFrom};
 use std::path::PathBuf;
 
 /// A unit of data that is stored in a
@@ -12,12 +12,24 @@ use std::path::PathBuf;
 /// be truncated e.g. if there was power
 /// loss.
 #[derive(Debug)]
-pub(crate) struct SectionItem {
+pub(crate) struct SectionItem<'a> {
     pub id: u32,
-    pub data: Vec<u8>,
+    pub data: &'a [u8],
     pub known_eof: bool,
     pub truncated: bool,
+    start: usize,
+    end: usize,
 }
+
+struct SectionItemMeta {
+    id: u32,
+    known_eof: bool,
+    truncated: bool,
+    start: usize,
+    end: usize,
+}
+
+impl<'a> SectionItem<'a> {}
 
 /// An absolute max size for files on disk.
 /// Exceeding this value results in failure, but
@@ -47,7 +59,7 @@ const MARKER_FAIL_REMAP: u8 = '.' as u8;
 /// a file may exceed this by the maximum item size.
 const MAX_FILE_SIZE: u32 = FAIL_FILE_SIZE - (3 * MAX_ITEM_SIZE);
 
-const MAX_ITEM_SIZE: u32 = 134_217_728;
+const MAX_ITEM_SIZE: u32 = 8192;
 
 #[derive(Debug)]
 pub(crate) struct SectionReader {
@@ -58,181 +70,197 @@ pub(crate) struct SectionReader {
 }
 
 impl SectionReader {
-    pub(crate) fn new(
-        path: &PathBuf,
+    pub(crate) fn new<'a>(
+        path: PathBuf,
         max_file_size: u32,
         max_item_size: u32,
         read_chunk_size: u32,
-    ) -> SectionReader {
-        let path_buf = PathBuf::from(path);
+        id: Option<u32>,
+    ) -> io::Result<SectionStreamingIterator> {
         let max_file_size = cmp::min(MAX_FILE_SIZE, max_file_size);
         let max_item_size = cmp::min(MAX_ITEM_SIZE, max_item_size);
 
-        SectionReader {
-            path_buf,
-            max_file_size,
-            max_item_size,
-            read_chunk_size,
+        if max_item_size != MAX_ITEM_SIZE || read_chunk_size != MAX_ITEM_SIZE {
+            // The current implementation requires the buffer size and maximum item
+            // size be 8K. This may change to dynamically allocate a vector for large
+            // items, at the cost of performance, but has not been implemented yet
+            // due to complexity.
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "max_item_size and read_chunk_size are not currently configurable",
+            ));
         }
-    }
 
-    pub(crate) fn stream_with_truncated(
-        &self,
-        id: Option<u32>,
-    ) -> io::Result<impl Iterator<Item = io::Result<SectionItem>>> {
-        let mut file = self.open_file()?;
+        let mut file = OpenOptions::new().read(true).open(&path)?;
 
-        // @FIXME should have a better error message so the user knows what's happening
-        let mut always_fail = false;
-
-        let mut position = if let Some(requested_id) = id {
+        let position = if let Some(requested_id) = id {
             file.seek(SeekFrom::Start(requested_id as u64))?;
             requested_id
         } else {
             0
         };
 
-        let buf_reader = BufReader::with_capacity(self.read_chunk_size as usize, file);
-
-        let iterator = SplitWithCarry {
-            buf: buf_reader,
-            carry: None,
+        let iterator = SectionStreamingIterator {
+            always_fail: false,
+            file: file,
+            item_buf: [0; MAX_ITEM_SIZE as usize],
+            item_len: 0,
+            item_start: 0,
+            max_file_size,
+            current: Ok(None),
+            position,
         };
-
-        let max_file_size = self.max_file_size;
-        let max_item_size = self.max_item_size;
-
-        let iterator = iterator.map(move |p| {
-            if always_fail {
-                Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    "a previous error has halted further execution",
-                ))
-            } else {
-                match p {
-                    Ok(item) => {
-                        let id = item.len();
-
-                        let result = if id > max_item_size as usize {
-                            always_fail = true;
-
-                            Err(io::Error::new(
-                                io::ErrorKind::Other,
-                                format!("item at position {} exceeds the maximum length", position),
-                            ))
-                        } else {
-                            position += 1 + id as u32;
-                            let known_eof = position >= max_file_size;
-                            Self::parse_item(position, item, known_eof)
-                        };
-
-                        result
-                    }
-
-                    Err(e) => {
-                        always_fail = true;
-                        Err(e)
-                    }
-                }
-            }
-        });
 
         Ok(iterator)
     }
-
-    fn open_file(&self) -> io::Result<File> {
-        OpenOptions::new().read(true).open(&self.path_buf)
-    }
-
-    fn parse_item(id: u32, mut data: Vec<u8>, known_eof: bool) -> io::Result<SectionItem> {
-        let len = data.len();
-
-        let mut escaped = false;
-        let mut i = 0;
-        let mut t = 0;
-
-        let truncated = len > 1 && data[len - 1] == MARKER_FAIL;
-
-        if !truncated {
-            // Decode our data in place
-            while i < len {
-                let byte = data[i];
-
-                if escaped && byte == MARKER_FAIL_REMAP {
-                    data[i - t] = MARKER_FAIL;
-                    escaped = false;
-                } else if escaped && byte == MARKER_SEPARATOR_REMAP {
-                    data[i - t] = MARKER_SEPARATOR;
-                    escaped = false;
-                } else if escaped && byte == MARKER_ESCAPE {
-                    data[i - t] = MARKER_ESCAPE;
-                    escaped = false;
-                } else if escaped {
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        format!("cannot parse file, invalid byte {} after escape", byte),
-                    ));
-                } else if byte == MARKER_ESCAPE {
-                    escaped = true;
-                    t += 1;
-                } else {
-                    data[i - t] = data[i];
-                }
-
-                i += 1;
-            }
-
-            data.truncate(len - t);
-        }
-
-        Ok(SectionItem {
-            id,
-            data,
-            known_eof,
-            truncated,
-        })
-    }
 }
 
-pub struct SplitWithCarry<B> {
-    buf: B,
-    carry: Option<Vec<u8>>,
+pub(crate) struct SectionStreamingIterator {
+    always_fail: bool,
+    file: File,
+    item_buf: [u8; MAX_ITEM_SIZE as usize],
+    item_start: usize,
+    item_len: usize,
+    max_file_size: u32,
+    current: io::Result<Option<SectionItemMeta>>,
+    position: u32,
 }
 
-/// An iterator that works just like split, except
-/// when reaching EOF, if the separator character
-/// is not found, None is returned and the data
-/// is "carried" over for the next call.
-impl<B: BufRead> Iterator for SplitWithCarry<B> {
-    type Item = io::Result<Vec<u8>>;
+impl SectionStreamingIterator {
+    pub(crate) fn current<'a>(&'a self) -> io::Result<Option<SectionItem<'a>>> {
+        match self.current {
+            Ok(Some(ref s)) => Ok(Some(SectionItem {
+                id: s.id,
+                data: &self.item_buf[s.start..s.end],
+                known_eof: s.known_eof,
+                truncated: s.truncated,
+                start: s.start,
+                end: s.end,
+            })),
 
-    fn next(&mut self) -> Option<io::Result<Vec<u8>>> {
-        let mut buf = Vec::new();
+            Ok(None) => Ok(None),
 
-        if let Some(ref mut c) = self.carry {
-            buf.append(c);
+            Err(ref _e) => Ok(None), // @TODO fixme
+        }
+    }
+
+    pub(crate) fn advance(&mut self) {
+        if self.always_fail {
+            // @TODO make this a nicer error message
+            self.current = Err(io::Error::new(
+                io::ErrorKind::Other,
+                "a previous error has halted further execution",
+            ));
+            return;
         }
 
-        self.carry = None;
+        // high-level overview: read a bunch of bytes from disk into memory
+        //                      on each subsequent call, extract the next item
+        //                      from memory, returning a reference to its data
+        //
+        //                      once no more items can be extracted, shift
+        //                      remaining data over and repeat
 
-        match self.buf.read_until(MARKER_SEPARATOR, &mut buf) {
-            Ok(0) => {
-                if !buf.is_empty() {
-                    self.carry = Some(buf);
+        loop {
+            let mut need_decode = false;
+            let mut last_byte = 0;
+
+            for i in self.item_start..self.item_len {
+                let byte = self.item_buf[i];
+
+                if byte == MARKER_SEPARATOR {
+                    let next_position = self.position + ((i - self.item_start) as u32) + 1;
+                    let truncated = last_byte == MARKER_FAIL;
+
+                    let mut escaped = false;
+                    let mut shifted = 0;
+
+                    if need_decode && !truncated {
+                        for j in self.item_start..i {
+                            let byte = self.item_buf[j];
+
+                            if escaped {
+                                if byte == MARKER_FAIL_REMAP {
+                                    self.item_buf[j - shifted] = MARKER_FAIL;
+                                    escaped = false;
+                                } else if byte == MARKER_SEPARATOR_REMAP {
+                                    self.item_buf[j - shifted] = MARKER_SEPARATOR;
+                                    escaped = false;
+                                } else if byte == MARKER_ESCAPE {
+                                    self.item_buf[j - shifted] = MARKER_ESCAPE;
+                                    escaped = false;
+                                } else {
+                                    self.always_fail = true;
+
+                                    self.current = Err(io::Error::new(
+                                        io::ErrorKind::InvalidData,
+                                        format!(
+                                            "cannot parse file, invalid byte {} after escape",
+                                            byte
+                                        ),
+                                    ));
+                                    return;
+                                }
+                            } else if byte == MARKER_ESCAPE {
+                                escaped = true;
+                                shifted += 1;
+                            } else if shifted != 0 {
+                                self.item_buf[j - shifted] = byte;
+                            }
+                        }
+                    }
+
+                    let item = SectionItemMeta {
+                        id: self.position,
+                        known_eof: next_position > self.max_file_size,
+                        truncated,
+                        start: self.item_start,
+                        end: i,
+                    };
+
+                    self.item_start = i + 1;
+                    self.position = next_position;
+
+                    self.current = Ok(Some(item));
+                    return;
+                } else if byte == MARKER_FAIL {
+                    need_decode = true;
                 }
 
-                None
+                last_byte = byte;
             }
-            Ok(_n) => {
-                if buf[buf.len() - 1] == MARKER_SEPARATOR {
-                    buf.pop();
-                    Some(Ok(buf))
-                } else {
-                    self.carry = Some(buf);
-                    None
+
+            let next_item_len = self.item_len - self.item_start;
+
+            for j in self.item_start..self.item_len {
+                self.item_buf[next_item_len] = self.item_buf[j];
+            }
+
+            self.item_start = 0;
+            self.item_len = next_item_len;
+
+            match self.file.read(&mut self.item_buf[self.item_len..]) {
+                Ok(read) => {
+                    self.item_len += read;
+
+                    if read == 0 {
+                        self.current = if self.item_len > 0 {
+                            Err(io::Error::new(
+                                io::ErrorKind::InvalidData,
+                                "maximum item size exceeded",
+                            ))
+                        } else {
+                            Ok(None)
+                        };
+                        return;
+                    }
+                }
+
+                Err(e) => {
+                    self.current = Err(e);
+                    return;
                 }
             }
-            Err(e) => Some(Err(e)),
         }
     }
 }
@@ -376,8 +404,8 @@ impl SectionWriter {
 
         let next_id = self.position;
 
-        for byte in data {
-            match *byte {
+        for &byte in data {
+            match byte {
                 MARKER_ESCAPE => {
                     self.item_buffer[0] = MARKER_ESCAPE;
                     self.item_buffer[1] = MARKER_ESCAPE;
@@ -484,6 +512,45 @@ fn last_id(file: &mut File, length: u32, read_chunk_size: u32) -> io::Result<Opt
         Ok(Some(0))
     }
 }
+
+/*
+#[test]
+fn test_speed() {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let path = PathBuf::from("/home/longshorej/testing2/d0/d0/d0/d0");
+    let mut reader = SectionReader::new(path, 2147287039, 65536, 8192, None).unwrap();
+
+    let start = SystemTime::now();
+
+    let mut i: u64 = 0;
+    let t0e = start
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards");
+    let t0 = t0e.as_secs() * 1000 + t0e.subsec_nanos() as u64 / 1_000_000;
+
+    let mut done = false;
+    for _ in 0..1 {
+        while !done {
+            reader.advance();
+
+            if let Ok(Some(item)) = reader.current() {
+                i += 1;
+            } else {
+                done = true;
+            }
+        }
+    }
+
+    let end = SystemTime::now();
+    let t1e = end.duration_since(UNIX_EPOCH).expect("Time went backwards");
+
+    let t1 = t1e.as_secs() * 1000 + t1e.subsec_nanos() as u64 / 1_000_000;
+
+    let tt = t1 - t0;
+
+    println!("read items: {} in {}ms", i, tt);
+}
+*/
 
 #[cfg(test)]
 mod tests {
