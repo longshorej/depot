@@ -10,7 +10,4 @@ matrix:
     - rust: nightly
 cache: cargo
 script:
-  - cargo build --verbose --all
-  - cargo build --verbose --all --release
-  - cargo test --verbose --all
-  - cargo test --verbose --all --release
+  - cd rust && cargo test --verbose --all --release

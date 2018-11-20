@@ -16,6 +16,8 @@ Depot is currently under development but should be "finished" within a few weeks
 
 ## Usage
 
+### Rust
+
 ```rust
 extern crate depot;
 
@@ -42,13 +44,17 @@ fn main() -> io::Result<()> {
 }
 ```
 
+### Java
+
+The Java library is under development. Check back soon!
+
 ## Goals & Thoughts
 
 * Store data in plain files on disk with tight control over when data is flushed.
 * Tolerate crashes and power less, but do so in a lazy fashion.
 * Single-threaded writer.
 * Support the ability to rewrite sections of the queue in an atomic fashion. This is useful for implementing concepts like compaction.
-* Ability to use from multiple languages, notably Rust and JVM.
+* Separate implementations in Java and Rust.
 * Synchronous file I/O. Given the poor state of AIO on Linux, defer to higher level abstractions to emulate asynchronous behavior. For instance, a dedicated group of threads can be used to interact with Depot.
 * Network support is left to higher level libraries.
 * Potentially support data integrity measures. CRC for each item is being considered, at the cost of 4 bytes of additional fixed overhead per stored item.
@@ -75,6 +81,8 @@ The primary interface, *Queue*, has similar performance characteristics but meas
 
 Given its append only design, it should also perform well with "spinning rust" disks.
 
+Note that these measurements are for the Rust flavor. The Java implementation is currently under development, but initial tests show ~25% slower.
+
 ### Does it support multiple concurrent writers?
 
 Multiple concurrent writers are not supported. A library such as [semalock](https://github.com/longshorej/semalock) can be used if coordination between processes is required, but it's better to use messaging and a single writer if possible.
@@ -89,7 +97,7 @@ A single Depot queue can technically store ~3.8PB of data, given a limit of 1.9B
 
 ### Java and Scala?
 
-Support is planned via JNI, see the [jvm](jvm) directory which is working toward a proof of concept to use Depot from Java and Scala code.
+Work in progress. There will be a plain zero-dependency Java implementation. Wrappers for Scala, Akka, Monix are being considered as well.
 
 ## License
 
