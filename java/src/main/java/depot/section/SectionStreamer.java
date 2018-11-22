@@ -1,19 +1,16 @@
 package depot.section;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedReader;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.SeekableByteChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.NoSuchElementException;
-import java.util.OptionalInt;
 
-public class SectionIterator implements Iterator<SectionItem> {
-
+/**
+ * Main mechanism for reading items from a section. Use `next` to advance the state of the streamer
+ * and return the next item (or null).
+ */
+public class SectionStreamer {
   private boolean alwaysFail;
   private final SeekableByteChannel channel;
   private byte[] itemBuf;
@@ -22,14 +19,20 @@ public class SectionIterator implements Iterator<SectionItem> {
   private int itemStart;
   private int maxFileSize;
   private SectionItem currentItem;
-  private Throwable currentThrowable;
+  private IOException currentThrowable;
   private int position;
 
-  public SectionIterator(Path path, int maxFileSize, int maxItemSize, int id) throws IOException {
-    if (maxItemSize != Section.MAX_ITEM_SIZE) {
-      throw new IllegalArgumentException("maxItemSize is not currently configurable");
-    }
-
+  /**
+   * Creates a new `SectionStreamer` which can read items from the provided file.
+   *
+   * @param path A path on disk for this section
+   * @param maxFileSize A limit to the size of the section. This must match the parameters its
+   *     writer used.
+   * @param id Resume reading from this item (identified by id, also known as an offset). The first
+   *     item of a section always has id 0.
+   * @throws IOException if there's an I/O error
+   */
+  public SectionStreamer(Path path, int maxFileSize, int id) throws IOException {
     if (id < 0) {
       throw new IllegalArgumentException("id cannot be negative");
     }
@@ -44,14 +47,32 @@ public class SectionIterator implements Iterator<SectionItem> {
     this.currentItem = null;
     this.currentThrowable = null;
     this.position = id;
+  }
 
+  /**
+   * Advances to the next item and returns it. If at the end of the section, this returns null. If
+   * at EOF (having returned null), if another item is appended, the next call to `next` will return
+   * that item, i.e. it is valid to call `next` after receiving null.
+   *
+   * @return the next item, or null if at the end of the section.
+   * @throws IOException if there's an I/O error
+   */
+  public SectionItem next() throws IOException {
     advance();
+
+    if (currentItem != null) {
+      return currentItem;
+    } else if (currentThrowable != null) {
+      throw currentThrowable;
+    } else {
+      return null;
+    }
   }
 
   private void advance() {
     if (alwaysFail) {
       currentItem = null;
-      currentThrowable = new IllegalStateException("a previous error has halted further execution");
+      currentThrowable = new IOException("a previous error has halted further execution");
       return;
     }
 
@@ -86,8 +107,7 @@ public class SectionIterator implements Iterator<SectionItem> {
                   alwaysFail = true;
 
                   currentThrowable =
-                      new IllegalStateException(
-                          "cannot parse file, invalid byte " + b2 + " after escape");
+                      new IOException("cannot parse file, invalid byte " + b2 + " after escape");
 
                   return;
                 }
@@ -136,8 +156,7 @@ public class SectionIterator implements Iterator<SectionItem> {
 
         if (read < 0) {
           currentItem = null;
-          currentThrowable =
-              itemLen < 1 ? null : new IllegalStateException("maximum item size exceeded");
+          currentThrowable = itemLen < 1 ? null : new IOException("maximum item size exceeded");
           return;
         }
       } catch (IOException e) {
@@ -145,30 +164,6 @@ public class SectionIterator implements Iterator<SectionItem> {
         currentThrowable = e;
         return;
       }
-    }
-  }
-
-  @Override
-  public boolean hasNext() {
-    // @TODO should "peak" somehow
-    return currentItem != null || currentThrowable != null;
-  }
-
-  @Override
-  public SectionItem next() {
-    // @TODO reference to existing
-    if (currentItem != null) {
-      SectionItem item = currentItem;
-      advance();
-
-      return item;
-    } else if (currentThrowable != null) {
-      Throwable throwable = currentThrowable;
-      advance();
-      throw new IllegalStateException(throwable);
-    } else {
-      advance();
-      throw new NoSuchElementException();
     }
   }
 }

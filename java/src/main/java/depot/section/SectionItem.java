@@ -4,6 +4,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 
+/** A `SectionItem` is a unit of data that is stored in the section. */
 public class SectionItem {
   public final int id;
   public final ByteBuffer data;
@@ -27,6 +28,7 @@ public class SectionItem {
     if (this == o) return true;
     if (o == null || getClass() != o.getClass()) return false;
     SectionItem that = (SectionItem) o;
+
     return id == that.id
         && knownEof == that.knownEof
         && truncated == that.truncated
@@ -35,7 +37,6 @@ public class SectionItem {
 
   @Override
   public int hashCode() {
-
     return Objects.hash(id, data, knownEof, truncated);
   }
 }
