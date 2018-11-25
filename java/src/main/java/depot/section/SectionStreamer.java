@@ -18,9 +18,13 @@ public class SectionStreamer {
   private int itemLen;
   private int itemStart;
   private int maxFileSize;
-  private SectionItem currentItem;
+  private SectionEntry currentEntry;
   private IOException currentThrowable;
   private int position;
+  private int id;
+  private byte sectionType;
+
+  private SectionEntry currentResumeEntry;
 
   /**
    * Creates a new `SectionStreamer` which can read items from the provided file.
@@ -28,15 +32,22 @@ public class SectionStreamer {
    * @param path A path on disk for this section
    * @param maxFileSize A limit to the size of the section. This must match the parameters its
    *     writer used.
-   * @param id Resume reading from this item (identified by id, also known as an offset). The first
-   *     item of a section always has id 0.
+   * @throws IOException if there's an I/O error
+   */
+  public SectionStreamer(Path path, int maxFileSize) throws IOException {
+    this(path, maxFileSize, -1);
+  }
+
+  /**
+   * Creates a new `SectionStreamer` which can read items from the provided file.
+   *
+   * @param path A path on disk for this section
+   * @param maxFileSize A limit to the size of the section. This must match the parameters its
+   *     writer used.
+   * @param id Resume reading from this item (identified by id, also known as an offset).
    * @throws IOException if there's an I/O error
    */
   public SectionStreamer(Path path, int maxFileSize, int id) throws IOException {
-    if (id < 0) {
-      throw new IllegalArgumentException("id cannot be negative");
-    }
-
     this.alwaysFail = false;
     this.channel = Files.newByteChannel(path);
     this.itemBuf = new byte[Section.MAX_ITEM_SIZE];
@@ -44,9 +55,50 @@ public class SectionStreamer {
     this.itemStart = 0;
     this.itemLen = 0;
     this.maxFileSize = maxFileSize;
-    this.currentItem = null;
+    this.currentEntry = null;
+    this.currentResumeEntry = null;
     this.currentThrowable = null;
     this.position = id;
+    this.id = id;
+    this.sectionType = -1;
+
+    readSectionType();
+  }
+
+  private void readSectionType() throws IOException {
+    itemStart = 0;
+
+    advance();
+
+    if (currentEntry != null
+        && currentEntry.item != null
+        && currentEntry.item.data.hasRemaining()) {
+      sectionType = currentEntry.item.data.get();
+
+      if (id >= 0) {
+        switch (sectionType) {
+          case SectionItem.TYPE_RAW:
+            channel.position(id);
+            break;
+
+          case SectionItem.TYPE_REMOVED:
+            SectionEntry entry = null;
+
+            // for compacted sections, we have to take a performance hit for resuming from offsets
+            // this means scanning the file until we find our id
+            while (!(entry = next()).eof && entry.item != null && entry.item.id < id) {}
+
+            this.currentResumeEntry = entry;
+
+            break;
+
+          default:
+            throw new IOException("Invalid section type byte: " + sectionType);
+        }
+      }
+    } else if (currentThrowable != null) {
+      throw currentThrowable;
+    }
   }
 
   /**
@@ -57,11 +109,25 @@ public class SectionStreamer {
    * @return the next item, or null if at the end of the section.
    * @throws IOException if there's an I/O error
    */
-  public SectionItem next() throws IOException {
-    advance();
+  public SectionEntry next() throws IOException {
+    if (sectionType == -1) {
+      readSectionType();
 
-    if (currentItem != null) {
-      return currentItem;
+      if (sectionType == -1) {
+        return new SectionEntry(null, false, true, 0);
+      }
+    }
+
+    if (currentResumeEntry != null && false) {
+      currentEntry = currentResumeEntry;
+      currentThrowable = null;
+      currentResumeEntry = null;
+    } else {
+      advance();
+    }
+
+    if (currentEntry != null) {
+      return currentEntry;
     } else if (currentThrowable != null) {
       throw currentThrowable;
     } else {
@@ -71,73 +137,113 @@ public class SectionStreamer {
 
   private void advance() {
     if (alwaysFail) {
-      currentItem = null;
+      currentEntry = null;
       currentThrowable = new IOException("a previous error has halted further execution");
       return;
     }
 
     while (true) {
-      boolean needDecode = false;
-      byte lastByte = 0;
+      if (itemLen - itemStart >= 4) {
+        int dataSize = itemBuf[itemStart + 1] << 8 | itemBuf[itemStart + 2];
 
-      for (int i = itemStart; i < itemLen; i++) {
-        byte b = itemBuf[i];
+        // we use the expected end as a hint for where the EOF byte is
+        // but note that it could be wrong when e.g. truncated, so if
+        // our expectations aren't met we fall back to a scan.
+        int expectedEnd = itemStart + 2 + dataSize + 1;
+        int startScanFrom =
+            expectedEnd < itemLen && itemBuf[expectedEnd] == Section.MARKER_SEPARATOR
+                ? expectedEnd
+                : itemStart + 3; // 3 is the type byte plus two size bytes
 
-        if (b == Section.MARKER_SEPARATOR) {
-          int nextPosition = position + (i - itemStart) + 1;
-          boolean truncated = lastByte == Section.MARKER_FAIL;
+        for (int i = startScanFrom; i < itemLen; i++) {
 
-          boolean escaped = false;
-          int shifted = 0;
+          if (itemBuf[i] == Section.MARKER_SEPARATOR) {
+            int nextPosition = position + (i - itemStart) + 1;
+            byte type = itemBuf[itemStart];
 
-          if (needDecode && !truncated) {
-            for (int j = itemStart; j < i; j++) {
-              byte b2 = itemBuf[j];
+            boolean needsDecode = false;
+            switch (type) {
+              case SectionItem.TYPE_ENCODED:
+                needsDecode = true;
+              case SectionItem.TYPE_RAW:
+                boolean truncated = itemBuf[i - 1] == Section.MARKER_FAIL || i != expectedEnd;
 
-              if (escaped) {
-                escaped = false;
+                if (needsDecode && !truncated) {
+                  boolean escaped = false;
+                  int shifted = 0;
 
-                if (b2 == Section.MARKER_FAIL_REMAP) {
-                  itemBuf[j - shifted] = Section.MARKER_FAIL;
-                } else if (b2 == Section.MARKER_SEPARATOR_REMAP) {
-                  itemBuf[j - shifted] = Section.MARKER_SEPARATOR;
-                } else if (b2 == Section.MARKER_ESCAPE) {
-                  itemBuf[j - shifted] = Section.MARKER_ESCAPE;
-                } else {
-                  alwaysFail = true;
+                  for (int j = itemStart; j < i; j++) {
+                    byte b2 = itemBuf[j];
 
-                  currentThrowable =
-                      new IOException("cannot parse file, invalid byte " + b2 + " after escape");
+                    if (escaped) {
+                      escaped = false;
 
-                  return;
+                      if (b2 == Section.MARKER_FAIL_REMAP) {
+                        itemBuf[j - shifted] = Section.MARKER_FAIL;
+                      } else if (b2 == Section.MARKER_SEPARATOR_REMAP) {
+                        itemBuf[j - shifted] = Section.MARKER_SEPARATOR;
+                      } else if (b2 == Section.MARKER_ESCAPE) {
+                        itemBuf[j - shifted] = Section.MARKER_ESCAPE;
+                      } else {
+                        alwaysFail = true;
+
+                        currentThrowable =
+                            new IOException(
+                                "cannot parse file, invalid byte " + b2 + " after escape");
+
+                        return;
+                      }
+                    } else if (b2 == Section.MARKER_ESCAPE) {
+                      escaped = true;
+                      shifted++;
+                    } else if (shifted > 0) {
+                      itemBuf[j - shifted] = b2;
+                    }
+                  }
                 }
-              } else if (b2 == Section.MARKER_ESCAPE) {
-                escaped = true;
-                shifted++;
-              } else if (shifted > 0) {
-                itemBuf[j - shifted] = b2;
-              }
+
+                SectionItem item =
+                    new SectionItem(
+                        type,
+                        position,
+                        ByteBuffer.wrap(itemBuf, itemStart + 3, i - itemStart - 3),
+                        truncated);
+
+                itemStart = i + 1;
+                position = nextPosition;
+                boolean absoluteEof = nextPosition > maxFileSize;
+                currentEntry = new SectionEntry(item, absoluteEof, absoluteEof, 0);
+                currentThrowable = null;
+                return;
+
+              case SectionItem.TYPE_REMOVED:
+                // @TODO assert length
+                // @TODO the math here is wrong
+
+                int bytesRemoved =
+                    itemBuf[itemStart + 1] << 24
+                        & itemBuf[itemStart + 2] << 16
+                        & itemBuf[itemStart + 3] << 8
+                        & itemBuf[itemStart + 4];
+
+                itemStart += 5;
+                position += bytesRemoved + 6;
+
+                boolean knownEof = position > maxFileSize;
+
+                currentEntry = new SectionEntry(null, knownEof, knownEof, bytesRemoved);
+                currentThrowable = null;
+                return;
+
+              default:
+                throw new RuntimeException("fixme " + type);
             }
           }
-
-          SectionItem item =
-              new SectionItem(
-                  position,
-                  ByteBuffer.wrap(itemBuf, itemStart, i - itemStart),
-                  nextPosition > maxFileSize,
-                  truncated);
-
-          itemStart = i + 1;
-          position = nextPosition;
-
-          currentItem = item;
-          return;
-        } else if (b == Section.MARKER_ESCAPE) {
-          needDecode = true;
         }
-
-        lastByte = b;
       }
+
+      // we don't have enough data to process another item, so shift what's remaining over
+      // and continue.
 
       int nextItemLen = 0;
       for (int j = itemStart; j < itemLen; j++) {
@@ -152,15 +258,15 @@ public class SectionStreamer {
       try {
         int read = channel.read(itemBuffer);
 
-        itemLen += read;
-
         if (read < 0) {
-          currentItem = null;
+          currentEntry = new SectionEntry(null, false, true, 0);
           currentThrowable = itemLen < 1 ? null : new IOException("maximum item size exceeded");
           return;
+        } else {
+          itemLen += read;
         }
       } catch (IOException e) {
-        currentItem = null;
+        currentEntry = null;
         currentThrowable = e;
         return;
       }
