@@ -1,8 +1,6 @@
 matrix:
   include:
     - language: rust
-      rust:
-        - stable
       os:
         - linux
         - osx
@@ -22,5 +20,5 @@ matrix:
         - find $HOME/.ivy2/cache -name "ivydata-*.properties" -delete
         - find $HOME/.sbt        -name "*.lock"               -delete
       script:
-        - cd sbt
+        - cd java
         - sbt test
