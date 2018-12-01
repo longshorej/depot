@@ -1,5 +1,7 @@
 package depot.section;
 
+import java.util.Objects;
+
 /**
  * A `SectionEntry` is a wrapper for a `SectionEntry` and also indicates if the end of a section was
  * reached.
@@ -17,5 +19,36 @@ public class SectionEntry {
     this.absoluteEof = absoluteEof;
     this.eof = eof;
     this.removed = removed;
+  }
+
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) return true;
+    if (o == null || getClass() != o.getClass()) return false;
+    SectionEntry that = (SectionEntry) o;
+    return absoluteEof == that.absoluteEof
+        && eof == that.eof
+        && removed == that.removed
+        && Objects.equals(item, that.item);
+  }
+
+  @Override
+  public int hashCode() {
+
+    return Objects.hash(item, absoluteEof, eof, removed);
+  }
+
+  @Override
+  public String toString() {
+    return "SectionEntry{"
+        + "item="
+        + item
+        + ", absoluteEof="
+        + absoluteEof
+        + ", eof="
+        + eof
+        + ", removed="
+        + removed
+        + '}';
   }
 }

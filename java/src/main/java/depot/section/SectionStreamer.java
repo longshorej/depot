@@ -5,6 +5,7 @@ import java.nio.ByteBuffer;
 import java.nio.channels.SeekableByteChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 
 /**
  * Main mechanism for reading items from a section. Use `next` to advance the state of the streamer
@@ -49,16 +50,32 @@ public class SectionStreamer {
    */
   public SectionStreamer(Path path, int maxFileSize, int id) throws IOException {
     this.alwaysFail = false;
-    this.channel = Files.newByteChannel(path);
+    this.channel = Files.newByteChannel(path, StandardOpenOption.READ);
     this.itemBuf = new byte[Section.MAX_ITEM_SIZE];
     this.itemBuffer = ByteBuffer.wrap(this.itemBuf);
+    this.maxFileSize = maxFileSize;
+
     this.itemStart = 0;
     this.itemLen = 0;
-    this.maxFileSize = maxFileSize;
     this.currentEntry = null;
     this.currentResumeEntry = null;
     this.currentThrowable = null;
-    this.position = id;
+    this.position = 0;
+    this.id = id;
+    this.sectionType = -1;
+
+    readSectionType();
+  }
+
+  public void seek(int id) throws IOException {
+    channel.position(0L);
+
+    this.itemStart = 0;
+    this.itemLen = 0;
+    this.currentEntry = null;
+    this.currentResumeEntry = null;
+    this.currentThrowable = null;
+    this.position = 0;
     this.id = id;
     this.sectionType = -1;
 
@@ -79,10 +96,13 @@ public class SectionStreamer {
         switch (sectionType) {
           case SectionItem.TYPE_RAW:
             channel.position(id);
+            position = id;
+            itemStart = 0;
+            itemLen = 0;
             break;
 
           case SectionItem.TYPE_REMOVED:
-            SectionEntry entry = null;
+            SectionEntry entry;
 
             // for compacted sections, we have to take a performance hit for resuming from offsets
             // this means scanning the file until we find our id
@@ -118,7 +138,7 @@ public class SectionStreamer {
       }
     }
 
-    if (currentResumeEntry != null && false) {
+    if (currentResumeEntry != null) {
       currentEntry = currentResumeEntry;
       currentThrowable = null;
       currentResumeEntry = null;
@@ -218,21 +238,25 @@ public class SectionStreamer {
 
               case SectionItem.TYPE_REMOVED:
                 // @TODO assert length
-                // @TODO the math here is wrong
+                // @TODO the math here might be wrong
+                // @TODO assert record separator, fail as that indicates file corruption
 
                 int bytesRemoved =
-                    itemBuf[itemStart + 1] << 24
-                        & itemBuf[itemStart + 2] << 16
-                        & itemBuf[itemStart + 3] << 8
-                        & itemBuf[itemStart + 4];
+                    ((0xFF & itemBuf[itemStart + 1]) << 24)
+                        | ((0xFF & itemBuf[itemStart + 2]) << 16)
+                        | ((0xFF & itemBuf[itemStart + 3]) << 8)
+                        | (0xFF & itemBuf[itemStart + 4]);
 
-                itemStart += 5;
-                position += bytesRemoved + 6;
+                itemStart += 6; // 1 item type, 4 length, 1 terminator
+                position += bytesRemoved; // @TODO shouldnt we add to this?
 
-                boolean knownEof = position > maxFileSize;
+                if (position > maxFileSize) {
+                  currentEntry = new SectionEntry(null, true, true, bytesRemoved);
+                  currentThrowable = null;
+                } else {
+                  advance();
+                }
 
-                currentEntry = new SectionEntry(null, knownEof, knownEof, bytesRemoved);
-                currentThrowable = null;
                 return;
 
               default:

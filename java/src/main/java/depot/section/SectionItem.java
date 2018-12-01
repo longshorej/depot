@@ -43,4 +43,18 @@ public class SectionItem {
   public int hashCode() {
     return Objects.hash(type, id, data, truncated);
   }
+
+  @Override
+  public String toString() {
+    return "SectionItem{"
+        + "type="
+        + type
+        + ", id="
+        + id
+        + ", data="
+        + data
+        + ", truncated="
+        + truncated
+        + '}';
+  }
 }

@@ -16,6 +16,10 @@ public class SectionWriter {
   private int position;
 
   public SectionWriter(Path path, int maxFileSize) throws IOException {
+    this(path, maxFileSize, SectionItem.TYPE_RAW);
+  }
+
+  SectionWriter(Path path, int maxFileSize, byte sectionType) throws IOException {
     this.buffer = ByteBuffer.allocate(16384);
     this.channel = Files.newByteChannel(path, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
     this.maxFileSize = maxFileSize;
@@ -29,8 +33,7 @@ public class SectionWriter {
       // crashed while initializing a file
 
       buffer.clear();
-      buffer.put(
-          new byte[] {SectionItem.TYPE_RAW, 0, 1, SectionItem.TYPE_RAW, Section.MARKER_SEPARATOR});
+      buffer.put(new byte[] {SectionItem.TYPE_RAW, 0, 1, sectionType, Section.MARKER_SEPARATOR});
       buffer.flip();
       writeExact();
       buffer.clear();
@@ -38,21 +41,18 @@ public class SectionWriter {
       size = channel.size();
     }
 
-    // @TODO validate truncation
-
     channel.position(size);
   }
 
-  public void appendRemoved(int bytesRemoved) throws IOException {
-    throw new IOException("not implemented yet");
-  }
-
-  public void append(ByteBuffer buffer) throws IOException {
-    throw new IOException("not implemented yet");
-  }
-
   public void append(byte[] data) throws IOException {
-    if (data.length > Section.MAX_ITEM_SIZE) {
+    append(ByteBuffer.wrap(data));
+  }
+
+  public void append(ByteBuffer data) throws IOException {
+    int length = data.remaining();
+    int start = data.position();
+
+    if (length > Section.MAX_ITEM_SIZE) {
       throw new IOException("item exceeds max item size");
     }
 
@@ -62,49 +62,87 @@ public class SectionWriter {
 
     final int nextId = position;
 
-    buffer.put(SectionItem.TYPE_RAW);
-    buffer.put((byte) (data.length >> 8));
-    buffer.put((byte) (data.length << 8 >> 8));
-    position += 3;
+    boolean encoded = false;
+    for (int i = 0; i < length; i++) {
+      byte b = data.get(start + i);
 
-    for (int i = 0; i < data.length; i++) {
-      byte b = data[i];
+      if (b == Section.MARKER_ESCAPE || b == Section.MARKER_SEPARATOR || b == Section.MARKER_FAIL) {
+        encoded = true;
 
-      switch (b) {
-        case Section.MARKER_ESCAPE:
-          buffer.put(Section.MARKER_ESCAPE);
-          buffer.put(Section.MARKER_ESCAPE);
-          position += 2;
-          break;
-
-        case Section.MARKER_SEPARATOR:
-          buffer.put(Section.MARKER_ESCAPE);
-          buffer.put(Section.MARKER_SEPARATOR_REMAP);
-          position += 2;
-          break;
-
-        case Section.MARKER_FAIL:
-          buffer.put(Section.MARKER_ESCAPE);
-          buffer.put(Section.MARKER_FAIL_REMAP);
-          position += 2;
-          break;
-
-        default:
-          buffer.put(b);
-          position++;
+        break;
       }
     }
 
-    buffer.put(Section.MARKER_SEPARATOR);
-    position++;
+    write(encoded ? SectionItem.TYPE_ENCODED : SectionItem.TYPE_RAW);
+    write((byte) (length >> 8));
+    write((byte) (length));
 
-    if (buffer.position() > 8192) {
+    for (int i = 0; i < length; i++) {
+      byte b = data.get(start + i);
+
+      if (encoded) {
+        switch (b) {
+          case Section.MARKER_ESCAPE:
+            write(Section.MARKER_ESCAPE);
+            write(Section.MARKER_ESCAPE);
+            encoded = true;
+            break;
+
+          case Section.MARKER_SEPARATOR:
+            write(Section.MARKER_ESCAPE);
+            write(Section.MARKER_SEPARATOR_REMAP);
+            encoded = true;
+            break;
+
+          case Section.MARKER_FAIL:
+            write(Section.MARKER_ESCAPE);
+            write(Section.MARKER_FAIL_REMAP);
+            encoded = true;
+            break;
+
+          default:
+            write(b);
+        }
+      } else {
+        write(b);
+      }
+    }
+
+    write(Section.MARKER_SEPARATOR);
+
+    if (isFull()) {
       sync();
     }
 
     lastId = nextId;
+  }
+
+  void appendRemoved(int bytesRemoved) throws IOException {
+    if (isFull()) {
+      throw new IOException("section is full");
+    }
+
+    final int nextId = position;
+
+    write(SectionItem.TYPE_REMOVED);
+    write((byte) (bytesRemoved >> 24));
+    write((byte) (bytesRemoved >> 16));
+    write((byte) (bytesRemoved >> 8));
+    write((byte) (bytesRemoved));
+    write(Section.MARKER_SEPARATOR);
+
+    lastId = nextId;
 
     if (isFull()) {
+      sync();
+    }
+  }
+
+  private void write(byte b0) throws IOException {
+    buffer.put(b0);
+    position++;
+
+    if (buffer.position() == buffer.capacity()) {
       sync();
     }
   }
@@ -115,7 +153,6 @@ public class SectionWriter {
     int r;
     while (n != l) {
       r = channel.write(buffer);
-      //  System.out.println("r = " + r + ", n = " + n + ", l = " + l);
       n += r;
     }
   }
