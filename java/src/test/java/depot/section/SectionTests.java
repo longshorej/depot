@@ -79,6 +79,11 @@ public class SectionTests {
       SectionStreamer compactedStreamer2 =
           new SectionStreamer(compactedPath, maxFileSize, entry1Id);
       assertEquals(entry1Id, compactedStreamer2.next().item.id);
+
+      SectionEntry removedEntry = compactedStreamer2.next();
+      assertEquals(5102, removedEntry.removed);
+      assertNull(removedEntry.item);
+
       for (int j = 250; j <= 300; j++) {
         assertEquals("this is test #" + j, compactedStreamer2.next().item.dataAsString());
       }
@@ -86,6 +91,7 @@ public class SectionTests {
       // test resuming with no offset
       SectionStreamer compactedStreamer3 = new SectionStreamer(compactedPath, maxFileSize);
       assertEquals(entry1Id, compactedStreamer3.next().item.id);
+      assertNull(compactedStreamer3.next().item);
       for (int j = 250; j <= 300; j++) {
         assertEquals("this is test #" + j, compactedStreamer3.next().item.dataAsString());
       }

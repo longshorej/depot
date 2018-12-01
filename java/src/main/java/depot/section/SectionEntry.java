@@ -3,10 +3,12 @@ package depot.section;
 import java.util.Objects;
 
 /**
- * A `SectionEntry` is a wrapper for a `SectionEntry` and also indicates if the end of a section was
+ * A `SectionEntry` is a wrapper for a `SectionItem` that also indicates if the end of a section was
  * reached.
  *
- * <p>`item` may be null if the last item in this section was removed.
+ * <p>If `eof` is reached, `item` will be null.
+ *
+ * <p>Additionally, `item` will be null if it is part of a sequence of items that was removed.
  */
 public class SectionEntry {
   public final SectionItem item;

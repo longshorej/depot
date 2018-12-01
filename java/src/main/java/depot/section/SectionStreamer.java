@@ -105,8 +105,9 @@ public class SectionStreamer {
             SectionEntry entry;
 
             // for compacted sections, we have to take a performance hit for resuming from offsets
-            // this means scanning the file until we find our id
-            while (!(entry = next()).eof && entry.item != null && entry.item.id < id) {}
+            // this means scanning the file until we find our id. note that item can be null
+            // if it is part of a sequence of items that were removed, so we skip those as well.
+            while (!(entry = next()).eof && (entry.item == null || entry.item.id < id)) {}
 
             this.currentResumeEntry = entry;
 
@@ -250,13 +251,10 @@ public class SectionStreamer {
                 itemStart += 6; // 1 item type, 4 length, 1 terminator
                 position += bytesRemoved; // @TODO shouldnt we add to this?
 
-                if (position > maxFileSize) {
-                  currentEntry = new SectionEntry(null, true, true, bytesRemoved);
-                  currentThrowable = null;
-                } else {
-                  advance();
-                }
+                boolean knownEof = position > maxFileSize;
 
+                currentEntry = new SectionEntry(null, knownEof, knownEof, bytesRemoved);
+                currentThrowable = null;
                 return;
 
               default:
