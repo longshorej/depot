@@ -17,6 +17,7 @@ public class SectionTests {
     int maxFileSize = 1024 * 1024 * 8;
     Path path = Files.createTempFile("depot-tests", "dpo");
     Path compactedPath = Files.createTempFile("depot-tests", "dpo");
+    Path recompactedPath = Files.createTempFile("depot-tests", "dpo");
 
     try {
       SectionWriter writer = new SectionWriter(path, maxFileSize);
@@ -34,6 +35,7 @@ public class SectionTests {
       int i = 0;
       SectionItem entry1 = null;
       SectionItem entry250 = null;
+      SectionItem entry260 = null;
 
       do {
         entry = streamer.next();
@@ -41,11 +43,14 @@ public class SectionTests {
         if (entry.item != null) {
           i++;
 
-          if (i == 250) {
-            assertEquals(entry.item.dataAsString(), "this is test #250");
+          if (i == 260) {
+            assertEquals(entry.item.toDecodedString(), "this is test #260");
+            entry260 = entry.item;
+          } else if (i == 250) {
+            assertEquals(entry.item.toDecodedString(), "this is test #250");
             entry250 = entry.item;
           } else if (i == 1) {
-            assertEquals(entry.item.dataAsString(), "this is test #1");
+            assertEquals(entry.item.toDecodedString(), "this is test #1");
             entry1 = entry.item;
           }
         }
@@ -54,6 +59,7 @@ public class SectionTests {
       assertEquals(300, i);
       assertNotNull(entry1);
       assertNotNull(entry250);
+      assertNotNull(entry260);
 
       // test seeking to an offset
       streamer.seek(entry250.id);
@@ -72,7 +78,7 @@ public class SectionTests {
           new SectionStreamer(compactedPath, maxFileSize, item250.item.id);
       assertEquals(entry250.id, compactedStreamer1.next().item.id);
       for (int j = 251; j <= 300; j++) {
-        assertEquals("this is test #" + j, compactedStreamer1.next().item.dataAsString());
+        assertEquals("this is test #" + j, compactedStreamer1.next().item.toDecodedString());
       }
 
       // test resuming from an earlier offset
@@ -85,7 +91,7 @@ public class SectionTests {
       assertNull(removedEntry.item);
 
       for (int j = 250; j <= 300; j++) {
-        assertEquals("this is test #" + j, compactedStreamer2.next().item.dataAsString());
+        assertEquals("this is test #" + j, compactedStreamer2.next().item.toDecodedString());
       }
 
       // test resuming with no offset
@@ -93,11 +99,26 @@ public class SectionTests {
       assertEquals(entry1Id, compactedStreamer3.next().item.id);
       assertNull(compactedStreamer3.next().item);
       for (int j = 250; j <= 300; j++) {
-        assertEquals("this is test #" + j, compactedStreamer3.next().item.dataAsString());
+        assertEquals("this is test #" + j, compactedStreamer3.next().item.toDecodedString());
+      }
+
+      // now let's remove 250-260, and test that the consecutive
+      // removals get merged
+      final int entry260Id = entry260.id;
+      SectionCompactor sectionRecompactor = new SectionCompactor(compactedPath, maxFileSize);
+      sectionRecompactor.compact(i2 -> i2.id >= entry260Id, recompactedPath, false);
+
+      SectionStreamer recompactedStreamer = new SectionStreamer(recompactedPath, maxFileSize);
+      SectionEntry recompactedRemovedEntry = recompactedStreamer.next();
+      assertEquals(5331, recompactedRemovedEntry.removed);
+      assertNull(recompactedRemovedEntry.item);
+      for (int j = 260; j <= 300; j++) {
+        assertEquals("this is test #" + j, recompactedStreamer.next().item.toDecodedString());
       }
     } finally {
       Files.delete(path);
       Files.delete(compactedPath);
+      Files.delete(recompactedPath);
     }
   }
 }

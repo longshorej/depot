@@ -35,7 +35,7 @@ public class SectionStreamer {
    *     writer used.
    * @throws IOException if there's an I/O error
    */
-  public SectionStreamer(Path path, int maxFileSize) throws IOException {
+  public SectionStreamer(final Path path, final int maxFileSize) throws IOException {
     this(path, maxFileSize, -1);
   }
 
@@ -48,7 +48,7 @@ public class SectionStreamer {
    * @param id Resume reading from this item (identified by id, also known as an offset).
    * @throws IOException if there's an I/O error
    */
-  public SectionStreamer(Path path, int maxFileSize, int id) throws IOException {
+  public SectionStreamer(final Path path, final int maxFileSize, final int id) throws IOException {
     this.alwaysFail = false;
     this.channel = Files.newByteChannel(path, StandardOpenOption.READ);
     this.itemBuf = new byte[Section.MAX_ITEM_SIZE];
@@ -67,7 +67,7 @@ public class SectionStreamer {
     readSectionType();
   }
 
-  public void seek(int id) throws IOException {
+  public void seek(final int id) throws IOException {
     channel.position(0L);
 
     this.itemStart = 0;
@@ -89,8 +89,21 @@ public class SectionStreamer {
 
     if (currentEntry != null
         && currentEntry.item != null
-        && currentEntry.item.data.hasRemaining()) {
+        && (currentEntry.item.data.hasRemaining() || currentEntry.item.truncated)) {
       sectionType = currentEntry.item.data.get();
+
+      if (currentEntry.item.truncated) {
+        // it's possible that the marker item was written but
+        // there was a crash before it was fully written
+        // in this case, the writer will marker it as such
+        // upon next write as truncated.
+        //
+        // because compacted sections are not subject to this
+        // -- they must be fully written -- we can assume that
+        // if the marker item is truncated, then this is a raw
+        // section
+        sectionType = SectionItem.TYPE_RAW;
+      }
 
       if (id >= 0) {
         switch (sectionType) {
@@ -152,6 +165,7 @@ public class SectionStreamer {
     } else if (currentThrowable != null) {
       throw currentThrowable;
     } else {
+      // @TODO not sure null is right..
       return null;
     }
   }
@@ -165,13 +179,13 @@ public class SectionStreamer {
 
     while (true) {
       if (itemLen - itemStart >= 4) {
-        int dataSize = itemBuf[itemStart + 1] << 8 | itemBuf[itemStart + 2];
+        final int dataSize = itemBuf[itemStart + 1] << 8 | itemBuf[itemStart + 2];
 
         // we use the expected end as a hint for where the EOF byte is
         // but note that it could be wrong when e.g. truncated, so if
         // our expectations aren't met we fall back to a scan.
-        int expectedEnd = itemStart + 2 + dataSize + 1;
-        int startScanFrom =
+        final int expectedEnd = itemStart + 2 + dataSize + 1;
+        final int startScanFrom =
             expectedEnd < itemLen && itemBuf[expectedEnd] == Section.MARKER_SEPARATOR
                 ? expectedEnd
                 : itemStart + 3; // 3 is the type byte plus two size bytes
@@ -179,22 +193,22 @@ public class SectionStreamer {
         for (int i = startScanFrom; i < itemLen; i++) {
 
           if (itemBuf[i] == Section.MARKER_SEPARATOR) {
-            int nextPosition = position + (i - itemStart) + 1;
-            byte type = itemBuf[itemStart];
+            final int nextPosition = position + (i - itemStart) + 1;
+            final byte type = itemBuf[itemStart];
 
             boolean needsDecode = false;
             switch (type) {
               case SectionItem.TYPE_ENCODED:
                 needsDecode = true;
               case SectionItem.TYPE_RAW:
-                boolean truncated = itemBuf[i - 1] == Section.MARKER_FAIL || i != expectedEnd;
+                final boolean truncated = itemBuf[i - 1] == Section.MARKER_FAIL || i != expectedEnd;
 
                 if (needsDecode && !truncated) {
                   boolean escaped = false;
                   int shifted = 0;
 
                   for (int j = itemStart; j < i; j++) {
-                    byte b2 = itemBuf[j];
+                    final byte b2 = itemBuf[j];
 
                     if (escaped) {
                       escaped = false;
@@ -223,7 +237,7 @@ public class SectionStreamer {
                   }
                 }
 
-                SectionItem item =
+                final SectionItem item =
                     new SectionItem(
                         type,
                         position,
@@ -232,7 +246,7 @@ public class SectionStreamer {
 
                 itemStart = i + 1;
                 position = nextPosition;
-                boolean absoluteEof = nextPosition > maxFileSize;
+                final boolean absoluteEof = nextPosition > maxFileSize;
                 currentEntry = new SectionEntry(item, absoluteEof, absoluteEof, 0);
                 currentThrowable = null;
                 return;
@@ -242,7 +256,7 @@ public class SectionStreamer {
                 // @TODO the math here might be wrong
                 // @TODO assert record separator, fail as that indicates file corruption
 
-                int bytesRemoved =
+                final int bytesRemoved =
                     ((0xFF & itemBuf[itemStart + 1]) << 24)
                         | ((0xFF & itemBuf[itemStart + 2]) << 16)
                         | ((0xFF & itemBuf[itemStart + 3]) << 8)
@@ -251,7 +265,7 @@ public class SectionStreamer {
                 itemStart += 6; // 1 item type, 4 length, 1 terminator
                 position += bytesRemoved; // @TODO shouldnt we add to this?
 
-                boolean knownEof = position > maxFileSize;
+                final boolean knownEof = position > maxFileSize;
 
                 currentEntry = new SectionEntry(null, knownEof, knownEof, bytesRemoved);
                 currentThrowable = null;
@@ -278,7 +292,7 @@ public class SectionStreamer {
       itemBuffer.position(itemLen);
 
       try {
-        int read = channel.read(itemBuffer);
+        final int read = channel.read(itemBuffer);
 
         if (read < 0) {
           currentEntry = new SectionEntry(null, false, true, 0);

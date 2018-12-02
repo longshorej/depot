@@ -15,12 +15,12 @@ public class SectionWriter {
   private int lastId;
   private int position;
 
-  public SectionWriter(Path path, int maxFileSize) throws IOException {
+  public SectionWriter(final Path path, final int maxFileSize) throws IOException {
     this(path, maxFileSize, SectionItem.TYPE_RAW);
   }
 
-  SectionWriter(Path path, int maxFileSize, byte sectionType) throws IOException {
-    this.buffer = ByteBuffer.allocate(16384);
+  SectionWriter(final Path path, final int maxFileSize, final byte sectionType) throws IOException {
+    this.buffer = ByteBuffer.allocate(16384); // @TODO this should be 8k
     this.channel = Files.newByteChannel(path, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
     this.maxFileSize = maxFileSize;
 
@@ -44,13 +44,13 @@ public class SectionWriter {
     channel.position(size);
   }
 
-  public void append(byte[] data) throws IOException {
+  public void append(final byte[] data) throws IOException {
     append(ByteBuffer.wrap(data));
   }
 
-  public void append(ByteBuffer data) throws IOException {
-    int length = data.remaining();
-    int start = data.position();
+  public void append(final ByteBuffer data) throws IOException {
+    final int length = data.remaining();
+    final int start = data.position();
 
     if (length > Section.MAX_ITEM_SIZE) {
       throw new IOException("item exceeds max item size");
@@ -78,7 +78,7 @@ public class SectionWriter {
     write((byte) (length));
 
     for (int i = 0; i < length; i++) {
-      byte b = data.get(start + i);
+      final byte b = data.get(start + i);
 
       if (encoded) {
         switch (b) {
@@ -117,7 +117,7 @@ public class SectionWriter {
     lastId = nextId;
   }
 
-  void appendRemoved(int bytesRemoved) throws IOException {
+  void appendRemoved(final int bytesRemoved) throws IOException {
     if (isFull()) {
       throw new IOException("section is full");
     }
@@ -138,8 +138,8 @@ public class SectionWriter {
     }
   }
 
-  private void write(byte b0) throws IOException {
-    buffer.put(b0);
+  private void write(final byte b) throws IOException {
+    buffer.put(b);
     position++;
 
     if (buffer.position() == buffer.capacity()) {
@@ -149,7 +149,7 @@ public class SectionWriter {
 
   private void writeExact() throws IOException {
     int n = 0;
-    int l = buffer.limit();
+    final int l = buffer.limit();
     int r;
     while (n != l) {
       r = channel.write(buffer);

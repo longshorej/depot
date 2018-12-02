@@ -6,11 +6,15 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.function.Function;
 
+/**
+ * A `SectionCompactor` provides methods for copying sections into new files and removing some of
+ * their items.
+ */
 public class SectionCompactor {
   private final int maxFileSize;
   private final Path path;
 
-  public SectionCompactor(Path path, int maxFileSize) {
+  public SectionCompactor(final Path path, final int maxFileSize) {
     this.maxFileSize = maxFileSize;
     this.path = path;
   }
@@ -24,8 +28,11 @@ public class SectionCompactor {
    * the destination.
    *
    * <p>Sections can only be compacted if they are full.
+   *
+   * <p>When compacting a section, adjacent removals are merged.
    */
-  public void compact(Function<SectionItem, Boolean> filter, Path dest) throws IOException {
+  public void compact(final Function<SectionItem, Boolean> filter, final Path dest)
+      throws IOException {
     compact(filter, dest, true);
   }
 
@@ -39,11 +46,11 @@ public class SectionCompactor {
    *
    * <p>Sections can only be compacted if they are full.
    */
-  void compact(Function<SectionItem, Boolean> filter, Path dest, boolean onlyFull)
+  void compact(final Function<SectionItem, Boolean> filter, final Path dest, final boolean onlyFull)
       throws IOException {
-    Path tempDest = Files.createTempFile(dest.getParent(), "depot", "TODO");
-    SectionStreamer streamer = new SectionStreamer(path, maxFileSize);
-    SectionWriter writer = new SectionWriter(tempDest, maxFileSize, SectionItem.TYPE_REMOVED);
+    final Path tempDest = Files.createTempFile(dest.getParent(), "depot", "dpo");
+    final SectionStreamer streamer = new SectionStreamer(path, maxFileSize);
+    final SectionWriter writer = new SectionWriter(tempDest, maxFileSize, SectionItem.TYPE_REMOVED);
     SectionEntry entry;
     int bytesRemoved = 0;
 

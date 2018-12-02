@@ -16,7 +16,8 @@ public class SectionEntry {
   public final boolean eof;
   public final int removed;
 
-  public SectionEntry(SectionItem item, boolean absoluteEof, boolean eof, int removed) {
+  public SectionEntry(
+      final SectionItem item, final boolean absoluteEof, final boolean eof, final int removed) {
     this.item = item;
     this.absoluteEof = absoluteEof;
     this.eof = eof;
@@ -24,10 +25,10 @@ public class SectionEntry {
   }
 
   @Override
-  public boolean equals(Object o) {
+  public boolean equals(final Object o) {
     if (this == o) return true;
     if (o == null || getClass() != o.getClass()) return false;
-    SectionEntry that = (SectionEntry) o;
+    final SectionEntry that = (SectionEntry) o;
     return absoluteEof == that.absoluteEof
         && eof == that.eof
         && removed == that.removed
@@ -36,7 +37,6 @@ public class SectionEntry {
 
   @Override
   public int hashCode() {
-
     return Objects.hash(item, absoluteEof, eof, removed);
   }
 
