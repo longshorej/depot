@@ -2,12 +2,13 @@ package depot;
 
 import depot.section.SectionWriter;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-public class Queue {
+public class QueueWriter implements Closeable {
   private static final int readChunkSize = 8192;
   private static final int writeChunkSize = 8192;
 
@@ -18,7 +19,7 @@ public class Queue {
   private Component component;
   private SectionWriter section;
 
-  public Queue(Path root) {
+  public QueueWriter(final Path root) {
     this.maxFileSize = 2147287039;
     this.maxItemSize = 8192;
     this.root = root;
@@ -36,6 +37,21 @@ public class Queue {
     }
 
     section.append(data);
+  }
+
+  @Override
+  public void close() throws IOException {
+    if (section != null) {
+      section.close();
+      component = null;
+      section = null;
+    }
+  }
+
+  public void sync() throws IOException {
+    if (section != null) {
+      section.sync();
+    }
   }
 
   private void advance() throws IOException {

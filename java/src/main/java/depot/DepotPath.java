@@ -49,12 +49,12 @@ class DepotPath {
     }
   }
 
-  private static short extractNumber(final String name) {
+  static short extractNumber(final String name) {
     if (name.startsWith("d")) {
       final String numericData =
           name.substring(1, name.endsWith(".dpo") ? name.length() - 4 : name.length());
 
-      if (numericData.chars().allMatch(c -> c >= 0 && c <= 9)) {
+      if (!numericData.isEmpty() && numericData.chars().allMatch(c -> c >= '0' && c <= '9')) {
         try {
           final int value = Integer.parseInt(numericData);
 

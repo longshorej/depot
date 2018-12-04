@@ -1,11 +1,12 @@
 package depot;
 
 import java.nio.file.Path;
+import java.util.Objects;
 import java.util.Optional;
 
 class Component {
-  final int MaxEncodedValue = 1999999999;
-  final short MaxValue = 1000;
+  private static final int MaxEncodedValue = 2000000000;
+  private static final short MaxValue = 1000;
 
   private final short one;
   private final short two;
@@ -71,7 +72,7 @@ class Component {
       return Optional.of(new Component(one, two, (short) (three + 1), (short) 0));
     } else if (two < MaxValue - 1) {
       return Optional.of(new Component(one, (short) (two + 1), (short) 0, (short) 0));
-    } else if (one < MaxValue - 1) {
+    } else if (one < 1) {
       return Optional.of(new Component((short) (one + 1), (short) 0, (short) 0, (short) 0));
     } else {
       return Optional.empty();
@@ -83,5 +84,35 @@ class Component {
     Path file = directory.resolve("d" + four + ".dpo");
 
     return new ComponentPath(directory, file);
+  }
+
+  @Override
+  public boolean equals(final Object o) {
+    if (this == o) return true;
+    if (o == null || getClass() != o.getClass()) return false;
+    final Component component = (Component) o;
+    return one == component.one
+        && two == component.two
+        && three == component.three
+        && four == component.four;
+  }
+
+  @Override
+  public int hashCode() {
+    return Objects.hash(MaxEncodedValue, MaxValue, one, two, three, four);
+  }
+
+  @Override
+  public String toString() {
+    return "Component{"
+        + ", one="
+        + one
+        + ", two="
+        + two
+        + ", three="
+        + three
+        + ", four="
+        + four
+        + '}';
   }
 }

@@ -1,5 +1,6 @@
 package depot.section;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.SeekableByteChannel;
@@ -7,7 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 
-public class SectionWriter {
+public class SectionWriter implements Closeable {
   private final SeekableByteChannel channel;
   private final ByteBuffer buffer;
   private final int maxFileSize;
@@ -115,6 +116,11 @@ public class SectionWriter {
     }
 
     lastId = nextId;
+  }
+
+  @Override
+  public void close() throws IOException {
+    channel.close();
   }
 
   void appendRemoved(final int bytesRemoved) throws IOException {
