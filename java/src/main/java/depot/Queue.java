@@ -1,9 +1,12 @@
 package depot;
 
+import depot.section.SectionCompactor;
+
 import java.io.Closeable;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
+import java.util.function.Function;
 
 public class Queue implements Closeable {
   private final Path root;
@@ -32,6 +35,12 @@ public class Queue implements Closeable {
     }
 
     queueWriter.append(data);
+  }
+
+  // @TODO allow compaction to resume from an id
+  public void compact(final Function<QueueItem, Boolean> filter) throws IOException {
+    QueueCompactor queueCompactor = new QueueCompactor(root);
+    queueCompactor.compact(filter);
   }
 
   @Override

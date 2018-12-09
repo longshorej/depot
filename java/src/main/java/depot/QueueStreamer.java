@@ -59,6 +59,9 @@ public class QueueStreamer {
         // store the error.
         ComponentPath componentPath = component.path(root);
 
+        // @TODO since we aim to support fat32 which doesn't support atomic rename, consider
+        // @TODO how this needs to change with renaming during compaction
+
         if (!Files.notExists(componentPath.file)) {
           // a note on the double negative: Files.exists returns false when there's an I/O error,
           // whereas we want to propagate such an error. Thus, always attempt to open the section
