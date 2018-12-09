@@ -120,6 +120,7 @@ public class SectionWriter implements Closeable {
 
   @Override
   public void close() throws IOException {
+    sync();
     channel.close();
   }
 

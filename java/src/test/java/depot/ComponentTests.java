@@ -42,20 +42,18 @@ public class ComponentTests {
   @Test
   public void nextWhenEmpty() {
     assertEquals(
-        Optional.of(new Component((short) 0, (short) 0, (short) 0, (short) 1)),
-        new Component(0).next());
+        new Component((short) 0, (short) 0, (short) 0, (short) 1), new Component(0).next());
   }
 
   @Test
   public void nextEndOfComponent() {
     assertEquals(
-        Optional.of(new Component((short) 0, (short) 0, (short) 1, (short) 0)),
-        new Component(999).next());
+        new Component((short) 0, (short) 0, (short) 1, (short) 0), new Component(999).next());
   }
 
   @Test
   public void nextWhenFull() {
-    assertEquals(Optional.empty(), new Component(1999999999).next());
+    assertNull(new Component(1999999999).next());
   }
 
   @Test

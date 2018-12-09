@@ -1,8 +1,9 @@
 package depot;
 
 import java.nio.file.Path;
+import java.util.AbstractMap;
+import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 
 class Component {
   private static final int MaxEncodedValue = 2000000000;
@@ -12,6 +13,13 @@ class Component {
   private final short two;
   private final short three;
   private final short four;
+
+  static Map.Entry<Component, Integer> decodeId(final long id) {
+    final int componentId = (int) (id >> 32);
+    final int sectionId = (int) (id);
+
+    return new AbstractMap.SimpleEntry<>(new Component(componentId), sectionId);
+  }
 
   Component() {
     one = 0;
@@ -56,6 +64,12 @@ class Component {
         + four;
   }
 
+  long encodeId(final int sectionId) {
+    final int componentId = encode();
+
+    return ((long) componentId << 32) | sectionId;
+  }
+
   boolean isEmpty() {
     return four == 0 && three == 0 && two == 0 && one == 0;
   }
@@ -65,17 +79,17 @@ class Component {
     return one == 1 && two == m && three == m && four == m;
   }
 
-  Optional<Component> next() {
+  Component next() {
     if (four < MaxValue - 1) {
-      return Optional.of(new Component(one, two, three, (short) (four + 1)));
+      return new Component(one, two, three, (short) (four + 1));
     } else if (three < MaxValue - 1) {
-      return Optional.of(new Component(one, two, (short) (three + 1), (short) 0));
+      return new Component(one, two, (short) (three + 1), (short) 0);
     } else if (two < MaxValue - 1) {
-      return Optional.of(new Component(one, (short) (two + 1), (short) 0, (short) 0));
+      return new Component(one, (short) (two + 1), (short) 0, (short) 0);
     } else if (one < 1) {
-      return Optional.of(new Component((short) (one + 1), (short) 0, (short) 0, (short) 0));
+      return new Component((short) (one + 1), (short) 0, (short) 0, (short) 0);
     } else {
-      return Optional.empty();
+      return null;
     }
   }
 

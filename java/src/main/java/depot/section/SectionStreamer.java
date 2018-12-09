@@ -165,8 +165,8 @@ public class SectionStreamer {
     } else if (currentThrowable != null) {
       throw currentThrowable;
     } else {
-      // @TODO not sure null is right..
-      return null;
+      // this should be unreachable..
+      throw new IllegalStateException("next() would return null; this is a bug");
     }
   }
 
@@ -252,8 +252,6 @@ public class SectionStreamer {
                 return;
 
               case SectionItem.TYPE_REMOVED:
-                // @TODO assert length
-                // @TODO the math here might be wrong
                 // @TODO assert record separator, fail as that indicates file corruption
 
                 final int bytesRemoved =
@@ -263,7 +261,7 @@ public class SectionStreamer {
                         | (0xFF & itemBuf[itemStart + 4]);
 
                 itemStart += 6; // 1 item type, 4 length, 1 terminator
-                position += bytesRemoved; // @TODO shouldnt we add to this?
+                position += bytesRemoved;
 
                 final boolean knownEof = position > maxFileSize;
 
@@ -272,7 +270,10 @@ public class SectionStreamer {
                 return;
 
               default:
-                throw new RuntimeException("fixme " + type);
+                alwaysFail = true;
+                currentThrowable = new IOException("cannot parse file, invalid type " + type);
+
+                return;
             }
           }
         }

@@ -1,9 +1,12 @@
 package depot;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.util.Optional;
+
 import org.junit.*;
 import static org.junit.Assert.*;
 
@@ -14,18 +17,25 @@ public class QueueTests {
 
     try {
       try (QueueWriter writer = new QueueWriter(path)) {
-        writer.append("Hello World!".getBytes(StandardCharsets.UTF_8));
+        writer.append(ByteBuffer.wrap("Hello World!".getBytes(StandardCharsets.UTF_8)));
         writer.sync();
       }
 
       try (QueueWriter writer = new QueueWriter(path)) {
-        writer.append("Hello World 2!".getBytes(StandardCharsets.UTF_8));
+        writer.append(ByteBuffer.wrap("Hello World 2!".getBytes(StandardCharsets.UTF_8)));
         writer.sync();
+      }
+
+      QueueStreamer streamer = new QueueStreamer(path, -1);
+
+      Optional<QueueItem> nextQueueItem;
+
+      while ((nextQueueItem = streamer.next()).isPresent()) {
+        System.out.println(nextQueueItem.get().toDecodedString());
       }
 
     } finally {
       removeRecursive(path);
-      System.out.println(path);
     }
   }
 
