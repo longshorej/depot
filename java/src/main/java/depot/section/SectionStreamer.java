@@ -179,7 +179,11 @@ public class SectionStreamer {
 
     while (true) {
       if (itemLen - itemStart >= 4) {
-        final int dataSize = itemBuf[itemStart + 1] << 8 | itemBuf[itemStart + 2];
+        System.out.println("ub=" + itemBuf[itemStart + 1]);
+        System.out.println("lb=" + itemBuf[itemStart + 2]);
+        final int dataSize =
+            ((int) itemBuf[itemStart + 1] << 8) | (byte) (itemBuf[itemStart + 2] << 8 >> 8);
+        System.out.println("dataSize=" + dataSize);
 
         // we use the expected end as a hint for where the EOF byte is
         // but note that it could be wrong when e.g. truncated, so if

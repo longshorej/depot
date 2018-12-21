@@ -13,8 +13,8 @@ class QueueCompactor {
   private final int maxFileSize;
   private final Path root;
 
-  QueueCompactor(Path root) {
-    this.maxFileSize = 2147287039;
+  QueueCompactor(final Path root, final int maxFileSize) {
+    this.maxFileSize = maxFileSize;
     this.root = root;
   }
 

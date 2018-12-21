@@ -26,7 +26,7 @@ public class QueueItem {
     final int p = data.position();
     final byte[] d = new byte[l - p];
 
-    data.get(d, p, d.length);
+    data.get(d, 0, d.length);
 
     return new OwnedQueueItem(id, d);
   }

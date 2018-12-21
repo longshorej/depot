@@ -75,6 +75,7 @@ public class SectionWriter implements Closeable {
     }
 
     write(encoded ? SectionItem.TYPE_ENCODED : SectionItem.TYPE_RAW);
+    System.out.println("length=" + length);
     write((byte) (length >> 8));
     write((byte) (length));
 

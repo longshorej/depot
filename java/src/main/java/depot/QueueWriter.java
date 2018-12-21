@@ -19,8 +19,8 @@ class QueueWriter implements Closeable {
   private Component component;
   private SectionWriter section;
 
-  QueueWriter(final Path root) {
-    this.maxFileSize = 2147287039;
+  QueueWriter(final Path root, final int maxFileSize) {
+    this.maxFileSize = maxFileSize;
     this.maxItemSize = 8192;
     this.root = root;
   }
