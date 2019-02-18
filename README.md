@@ -12,7 +12,9 @@ It's important to note that Depot is focused strictly on low-level storage. Repl
 
 ## Status
 
-Depot is currently under development but should be "finished" within a few weeks. Development happens on Saturday and Sunday afternoons, CDT.
+Development is currently stalled as other projects are currently higher priority.
+
+Consider this project a preview of the API -- the on-disk format will change to accomodate better performance and efficient item removal. The intention is for there to be first-class implementations for Java and Rust.
 
 ## Usage
 
