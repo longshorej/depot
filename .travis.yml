@@ -1,13 +1,24 @@
-language: rust
-rust:
-  - stable
-os:
-  - windows
-  - linux
-  - osx
 matrix:
-  allow_failures:
-    - rust: nightly
-cache: cargo
-script:
-  - cd rust && cargo test --verbose --all --release
+  include:
+    - language: rust
+      os:
+        - linux
+        - osx
+        - windows
+      cache: cargo
+      script:
+        - cd rust
+        - cargo test --verbose --all --release
+    - language: scala
+      os:
+        - linux
+      cache:
+        directories:
+          - $HOME/.ivy2/cache
+          - $HOME/.sbt
+      before_cache:
+        - find $HOME/.ivy2/cache -name "ivydata-*.properties" -delete
+        - find $HOME/.sbt        -name "*.lock"               -delete
+      script:
+        - cd java
+        - sbt test
